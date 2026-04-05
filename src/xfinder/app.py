@@ -502,12 +502,13 @@ class XFinderApp:
                 import threading
                 threading.Timer(0.1, update_ui_after).start()
             except Exception as e:
-                self.logger.error(f"索引构建失败: {str(e)}")
+                error_msg = str(e)
+                self.logger.error(f"索引构建失败: {error_msg}")
                 # 在主线程中更新UI
                 def update_ui_error():
                     self.is_building_index = False
                     self.progress_container.visible = False
-                    self.status_text = f"索引构建失败: {str(e)}"
+                    self.status_text = f"索引构建失败: {error_msg}"
                     self.status_bar.content.controls[0].value = self.status_text
                     self.page.update()
                 
@@ -785,8 +786,14 @@ class XFinderApp:
     def _init_logging(self):
         """初始化日志配置"""
         # 确保日志目录存在
-        log_dir = Path.home() / ".xfinder" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            # 首先尝试使用用户主目录
+            log_dir = Path.home() / ".xfinder" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            # 如果失败，使用应用程序当前目录
+            log_dir = Path.cwd() / ".logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
         
         # 日志文件路径
         log_file = log_dir / f"xfinder_{time.strftime('%Y-%m-%d')}.log"
@@ -877,6 +884,29 @@ class XFinderApp:
 
 
 def run_app():
+    # 删除原有的配置和索引文件
+    import shutil
+    from pathlib import Path
+    
+    # 项目根目录的配置
+    project_root = Path(__file__).parent.parent.parent
+    project_config_dir = project_root / '.xfinder'
+    if project_config_dir.exists():
+        try:
+            shutil.rmtree(project_config_dir)
+            print(f"已删除项目配置目录: {project_config_dir}")
+        except Exception as e:
+            print(f"删除项目配置目录失败: {e}")
+    
+    # 用户主目录的配置
+    user_config_dir = Path.home() / '.xfinder'
+    if user_config_dir.exists():
+        try:
+            shutil.rmtree(user_config_dir)
+            print(f"已删除用户配置目录: {user_config_dir}")
+        except Exception as e:
+            print(f"删除用户配置目录失败: {e}")
+    
     def main(page: ft.Page):
         app = XFinderApp(page)
 

@@ -6,20 +6,27 @@ from .config import config
 class Searcher:
     def __init__(self):
         self.db_path = config.index_dir / 'xfinder.db'
-        self.conn = None
-        self.cursor = None
         self.content_index_enabled = config.is_content_index_enabled()
     
     def connect_db(self):
-        self.conn = sqlite3.connect(str(self.db_path))
-        self.cursor = self.conn.cursor()
+        # 每次都创建新的连接，确保线程安全
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=30,
+            check_same_thread=False  # 允许跨线程访问
+        )
+        # 启用WAL模式，提高并发性能
+        conn.execute('PRAGMA journal_mode = WAL')
+        cursor = conn.cursor()
+        return conn, cursor
     
-    def close_db(self):
-        if self.conn:
-            self.conn.close()
+    def close_db(self, conn):
+        if conn:
+            conn.close()
     
     def search(self, query=None, folder_name=None, file_name=None, file_type=None, size_min=None, size_max=None, date_min=None, date_max=None, limit=20, sort_by='relevance'):
-        self.connect_db()
+        # 获取新的数据库连接
+        conn, cursor = self.connect_db()
         
         start_time = time.time()
         
@@ -130,8 +137,8 @@ class Searcher:
         
         # 执行查询
         try:
-            self.cursor.execute(base_query, params)
-            results = self.cursor.fetchall()
+            cursor.execute(base_query, params)
+            results = cursor.fetchall()
         except Exception as e:
             print(f"Error searching: {e}")
             results = []
@@ -146,8 +153,8 @@ class Searcher:
             WHERE fc.content MATCH ?
             """
             try:
-                self.cursor.execute(content_query, (parsed_query['text'],))
-                content_results = self.cursor.fetchall()
+                cursor.execute(content_query, (parsed_query['text'],))
+                content_results = cursor.fetchall()
             except Exception as e:
                 print(f"Error in content search: {e}")
         
@@ -183,7 +190,8 @@ class Searcher:
                 'match_type': match_type
             })
         
-        self.close_db()
+        # 关闭数据库连接
+        self.close_db(conn)
         
         return {
             'results': formatted_results,

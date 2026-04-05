@@ -34,16 +34,23 @@ class Indexer:
     
     def connect_db(self):
         print("连接数据库...")
+        # 确保数据库目录存在
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # 使用更高效的数据库配置
         self.conn = sqlite3.connect(
             str(self.db_path),
             timeout=30,
+            check_same_thread=False,  # 允许跨线程访问
             isolation_level=None  # 禁用自动事务，使用手动事务
         )
+        # 启用WAL模式，提高并发性能
+        self.conn.execute('PRAGMA journal_mode = WAL')
         # 启用写同步，提高写入性能
-        self.conn.execute('PRAGMA synchronous = OFF')
+        self.conn.execute('PRAGMA synchronous = NORMAL')
         # 启用内存临时表，提高查询性能
         self.conn.execute('PRAGMA temp_store = MEMORY')
+        # 设置缓存大小
+        self.conn.execute('PRAGMA cache_size = -64000')  # 64MB
         print("获取游标...")
         self.cursor = self.conn.cursor()
         print("创建表...")
