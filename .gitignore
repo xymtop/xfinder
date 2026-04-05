@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# XFinder
+.xfinder/
+
+# Flet
+flet-macos.tar.gz
+
+# Environment variables
+.env
+
+# Test files
+.pytest_cache/
