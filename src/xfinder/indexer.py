@@ -217,32 +217,47 @@ class Indexer:
                 if item.name in self.exclude_dirs:
                     continue
                 
-                if item.is_dir():
-                    subdirs.append(item)
-                    # 存储文件夹信息
+                try:
+                    # 检查是否是目录
                     try:
-                        files.append({
-                            'path': str(item),
-                            'name': item.name,
-                            'extension': '',  # 文件夹没有扩展名
-                            'size': 0,  # 文件夹大小设为0
-                            'mtime': int(item.stat().st_mtime),
-                            'is_directory': True  # 标记为文件夹
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing directory {item}: {e}")
-                elif item.is_file():
+                        is_dir = item.is_dir()
+                    except Exception:
+                        is_dir = False
+                    
+                    # 检查是否是文件
                     try:
-                        files.append({
-                            'path': str(item),
-                            'name': item.name,
-                            'extension': item.suffix,
-                            'size': item.stat().st_size,
-                            'mtime': int(item.stat().st_mtime),
-                            'is_directory': False  # 标记为文件
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing file {item}: {e}")
+                        is_file = item.is_file()
+                    except Exception:
+                        is_file = False
+                    
+                    if is_dir:
+                        subdirs.append(item)
+                        # 存储文件夹信息
+                        try:
+                            files.append({
+                                'path': str(item),
+                                'name': item.name,
+                                'extension': '',  # 文件夹没有扩展名
+                                'size': 0,  # 文件夹大小设为0
+                                'mtime': int(item.stat().st_mtime),
+                                'is_directory': True  # 标记为文件夹
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing directory {item}: {e}")
+                    elif is_file:
+                        try:
+                            files.append({
+                                'path': str(item),
+                                'name': item.name,
+                                'extension': item.suffix,
+                                'size': item.stat().st_size,
+                                'mtime': int(item.stat().st_mtime),
+                                'is_directory': False  # 标记为文件
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing file {item}: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing item {item}: {e}")
             
             return files, subdirs
         

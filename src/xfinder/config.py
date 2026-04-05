@@ -17,7 +17,7 @@ class Config:
             'scan_paths': [str(self.project_root)],
             'exclude_dirs': ['.git', 'node_modules', '__pycache__'],
             'content_index': {
-                'enabled': True,
+                'enabled': False,
                 'extensions': ['.txt', '.md', '.py', '.js', '.ts', '.go', '.java', '.json', '.yaml'],
                 'max_file_size': '5MB'
             },
@@ -79,7 +79,7 @@ class Config:
         return self.get('exclude_dirs', ['.git', 'node_modules', '__pycache__'])
     
     def is_content_index_enabled(self):
-        return self.get('content_index.enabled', True)
+        return self.get('content_index.enabled', False)
     
     def get_content_extensions(self):
         return self.get('content_index.extensions', ['.txt', '.md', '.py', '.js', '.ts', '.go', '.java', '.json', '.yaml'])

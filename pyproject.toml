@@ -1,7 +1,7 @@
 [project]
 name = "xfinder"
 version = "0.1.0"
-description = "命令行本地文件搜索工具"
+description = "XFinder - 本地文件搜索工具"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -12,6 +12,8 @@ dependencies = [
     "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
     "flet>=0.21.0",
+    "pyinstaller>=6.19.0",
+    "pillow>=12.2.0",
 ]
 
 [project.scripts]

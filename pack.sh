@@ -5,7 +5,7 @@
 
 set -e
 
-APP_NAME="xfinder"
+APP_NAME="XFinder"
 VERSION="0.1.0"
 DIST_DIR="dist"
 
@@ -39,29 +39,22 @@ pack_macos() {
     echo "  macOS 打包"
     echo "========================================="
 
-    # 方式1: 使用 Flet 内置打包
-    flet pack src/xfinder/app.py \
+    # 使用 Flet 内置打包
+    uv run flet pack src/xfinder/app.py \
         --name "${APP_NAME}" \
-        --product-name "xfinder" \
-        --org "com.xfinder" \
-        --version "${VERSION}" \
-        --output-dir "${DIST_DIR}/macos" \
-        --one-file
-
-    # 方式2: 使用 PyInstaller (备选)
-    # uv run pyinstaller --name "${APP_NAME}" \
-    #     --onefile \
-    #     --windowed \
-    #     --add-data "src/xfinder:src/xfinder" \
-    #     --add-data "pyproject.toml:." \
-    #     --hidden-import xfinder \
-    #     --hidden-import xfinder.app \
-    #     --hidden-import xfinder.sdk \
-    #     --hidden-import xfinder.indexer \
-    #     --hidden-import xfinder.searcher \
-    #     --hidden-import xfinder.config \
-    #     --osx-bundle-identifier com.xfinder \
-    #     src/xfinder/app.py
+        --product-name "XFinder" \
+        --bundle-id "com.xfinder" \
+        --product-version "${VERSION}" \
+        --distpath "${DIST_DIR}/macos" \
+        --icon "src/xfinder/resource/logo.icns" \
+        --add-data "src/xfinder:xfinder" \
+        --add-data "pyproject.toml:." \
+        --hidden-import xfinder \
+        --hidden-import xfinder.app \
+        --hidden-import xfinder.sdk \
+        --hidden-import xfinder.indexer \
+        --hidden-import xfinder.searcher \
+        --hidden-import xfinder.config
 
     echo "[macOS] 打包完成: ${DIST_DIR}/macos/"
 }

@@ -7,7 +7,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
 from queue import Queue
-from .sdk import get_sdk
+import logging
+import os
+from xfinder.sdk import get_sdk
 
 class EventBus:
     """事件总线类，用于管理事件的发送和处理"""
@@ -58,7 +60,7 @@ class EventBus:
 class XFinderApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "xfinder"
+        self.page.title = "XFinder"
         self.page.window_width = 1200
         self.page.window_height = 800
         self.page.window_min_width = 900
@@ -103,6 +105,12 @@ class XFinderApp:
         self._register_event_handlers()
         self.event_bus.start()
 
+        # 初始化日志
+        self._init_logging()
+
+        # 注册快捷键
+        self.page.on_keyboard_event = self._on_keyboard_event
+
         self.init_ui()
 
     def init_ui(self):
@@ -113,7 +121,7 @@ class XFinderApp:
             autofocus=True,
             border=ft.InputBorder.OUTLINE,
             border_radius=0,
-            text_size=14,
+            text_size=13,
             height=35,
             content_padding=ft.Padding(left=10, top=8, right=10, bottom=8),
         )
@@ -124,15 +132,24 @@ class XFinderApp:
         self.directory_input = ft.TextField(
             value=desktop_path,
             hint_text="选择扫描目录",
-            width=200,
             height=35,
             text_size=13,
         )
         
-        # 浏览按钮
-        self.browse_button = ft.ElevatedButton(
-            "浏览",
-            on_click=self.browse_directory,
+        # 重新构建按钮
+        self.rebuild_button = ft.ElevatedButton(
+            "重新构建",
+            on_click=self.rebuild_index,
+            height=35,
+            style=ft.ButtonStyle(
+                text_style=ft.TextStyle(size=13)
+            )
+        )
+        
+        # 权限设置按钮
+        self.permission_button = ft.ElevatedButton(
+            "权限设置",
+            on_click=self.open_permission_settings,
             height=35,
             style=ft.ButtonStyle(
                 text_style=ft.TextStyle(size=13)
@@ -161,8 +178,6 @@ class XFinderApp:
                 ft.dropdown.Option(".mp3"),
                 ft.dropdown.Option(".zip"),
             ],
-            width=120,
-            height=35,
             text_size=13,
             value="全部",  # 设置默认值为全部
             on_select=self.on_filter_change,
@@ -175,8 +190,6 @@ class XFinderApp:
                 ft.dropdown.Option("文件"),
                 ft.dropdown.Option("文件夹"),
             ],
-            width=100,
-            height=35,
             text_size=13,
             value="全部",  # 设置默认值为全部
             on_select=self.on_filter_change,
@@ -194,33 +207,37 @@ class XFinderApp:
 
         # 搜索工具栏
         search_toolbar = ft.Container(
-            content=ft.Column([
-                # 第一行：搜索框和按钮
-                ft.Row([
-                    ft.Icon(ft.Icons.SEARCH, size=18, color="#666666"),
-                    self.search_field,
-                    self.search_button,
-                ], spacing=10, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                # 第二行：筛选选项
-                ft.Row([
-                    ft.Container(
-                        content=ft.Text("扫描目录:", size=13, color="#666666"),
-                        padding=ft.Padding(left=20, top=5, right=5, bottom=0),
-                    ),
-                    self.directory_input,
-                    self.browse_button,
-                    ft.Container(
-                        content=ft.Text("文件类型:", size=13, color="#666666"),
-                        padding=ft.Padding(left=20, top=5, right=5, bottom=0),
-                    ),
-                    self.type_filter,
-                    ft.Container(
-                        content=ft.Text("类型:", size=13, color="#666666"),
-                        padding=ft.Padding(left=20, top=5, right=5, bottom=0),
-                    ),
-                    self.item_type_filter,
-                ], spacing=10, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ], spacing=5),
+            content=ft.Row([
+                # 搜索框
+                ft.Icon(ft.Icons.SEARCH, size=18, color="#666666"),
+                self.search_field,
+                
+                # 文件类型筛选
+                ft.Container(
+                    content=ft.Text("文件类型:", size=13, color="#666666"),
+                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
+                ),
+                self.type_filter,
+                
+                # 文件/文件夹筛选
+                ft.Container(
+                    content=ft.Text("类型:", size=13, color="#666666"),
+                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
+                ),
+                self.item_type_filter,
+                
+                # 搜索按钮
+                self.search_button,
+                
+                # 扫描目录
+                ft.Container(
+                    content=ft.Text("扫描目录:", size=13, color="#666666"),
+                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
+                ),
+                self.directory_input,
+                self.rebuild_button,
+                self.permission_button,
+            ], spacing=10, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=False),
             padding=ft.Padding(left=10, top=5, right=10, bottom=5),
             bgcolor="#ffffff",
             border=ft.border.all(1, "#d0d0d0"),
@@ -306,7 +323,7 @@ class XFinderApp:
                 self.result_container,
                 self.progress_container,
                 self.status_bar,
-            ], expand=True, spacing=0),
+            ], expand=True, spacing=10),
         )
 
         # 启动后自动构建索引
@@ -451,6 +468,7 @@ class XFinderApp:
 
     def _build_index_async(self):
         """异步构建索引"""
+        self.logger.info("开始构建索引")
         # 先在主线程中更新UI
         self.is_building_index = True
         self.progress_container.visible = True
@@ -465,9 +483,12 @@ class XFinderApp:
                 directory = self.directory_input.value.strip()
                 if not directory:
                     directory = str(Path.home())
+                
+                self.logger.info(f"开始扫描目录: {directory}")
 
                 # 执行索引构建
                 result = self.sdk.build_index(directory=directory)
+                self.logger.info(f"索引构建完成，耗时 {result['time']*1000:.0f}ms")
 
                 # 在主线程中更新UI
                 def update_ui_after():
@@ -481,6 +502,7 @@ class XFinderApp:
                 import threading
                 threading.Timer(0.1, update_ui_after).start()
             except Exception as e:
+                self.logger.error(f"索引构建失败: {str(e)}")
                 # 在主线程中更新UI
                 def update_ui_error():
                     self.is_building_index = False
@@ -510,6 +532,7 @@ class XFinderApp:
 
     def perform_search(self):
         """在单独的线程中执行搜索，避免阻塞主线程"""
+        self.logger.info(f"开始搜索: {self.current_query}")
         def search_thread():
             try:
                 start_time = time.time()
@@ -530,6 +553,7 @@ class XFinderApp:
                 if self.file_type_filter and self.file_type_filter != "全部":
                     file_type = self.file_type_filter.lstrip(".")
                     params["file_type"] = file_type
+                    self.logger.info(f"添加文件类型筛选: {file_type}")
 
                 # 执行搜索
                 result = self.sdk.search(**params)
@@ -546,8 +570,10 @@ class XFinderApp:
                 if self.item_type_filter_value and self.item_type_filter_value != "全部":
                     if self.item_type_filter_value == "文件":
                         search_results = [item for item in search_results if not item.get("is_directory", False)]
+                        self.logger.info("筛选类型: 文件")
                     elif self.item_type_filter_value == "文件夹":
                         search_results = [item for item in search_results if item.get("is_directory", False)]
+                        self.logger.info("筛选类型: 文件夹")
 
                 # 对结果排序
                 sort_key_map = {
@@ -567,11 +593,13 @@ class XFinderApp:
                     count = len(self.search_results)
                     self.status_bar.content.controls[0].value = f"找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms"
                     self.page.update()
+                    self.logger.info(f"搜索完成，找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms")
 
                 # 使用定时器在主线程中更新UI
                 import threading
                 threading.Timer(0.1, update_ui).start()
             except Exception as e:
+                self.logger.error(f"搜索失败: {str(e)}")
                 # 在主线程中更新UI
                 def update_ui_error():
                     self.status_bar.content.controls[0].value = f"搜索失败: {str(e)}"
@@ -650,14 +678,17 @@ class XFinderApp:
         return type_map.get(ext, f"{extension.upper()} 文件") if ext else "文件"
 
     def display_results(self):
+        self.logger.info(f"开始显示结果，结果数量: {len(self.search_results)}")
         self.result_table.rows.clear()
 
         if not self.search_results:
+            self.logger.info("搜索结果为空")
             self.page.update()
             return
 
         # 确保搜索结果不为空
         if len(self.search_results) > 0:
+            self.logger.info(f"搜索结果数量: {len(self.search_results)}")
             for item in self.search_results[:500]:  # 限制显示500条
                 try:
                     path = item.get("path", "")
@@ -671,52 +702,163 @@ class XFinderApp:
                     mtime_str = self._format_time(mtime)
                     type_str = self._get_file_type(extension, is_directory)
 
-                    # 创建数据行
-                    row = ft.DataRow(
-                        cells=[
-                            ft.DataCell(ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)),
-                            ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
-                            ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
-                            ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
-                            ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
-                        ],
-                        on_select_change=lambda e, p=path: self.open_item(p),
-                    )
+                    # 根据文件类型选择图标
+                    try:
+                        if is_directory:
+                            icon = ft.Icon(ft.Icons.FOLDER, size=16, color="#4285f4")
+                        elif extension in ["py"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#3776ab")
+                        elif extension in ["js", "ts"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#f7df1e")
+                        elif extension in ["html"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#e34f26")
+                        elif extension in ["css"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#1572b6")
+                        elif extension in ["json"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
+                        elif extension in ["yaml", "yml"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
+                        elif extension in ["toml"]:
+                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
+                        elif extension in ["md"]:
+                            icon = ft.Icon(ft.Icons.DESCRIPTION, size=16, color="#000000")
+                        elif extension in ["txt"]:
+                            icon = ft.Icon(ft.Icons.TEXT_SNIPPET, size=16, color="#000000")
+                        elif extension in ["pdf"]:
+                            icon = ft.Icon(ft.Icons.PICTURE_AS_PDF, size=16, color="#ea4335")
+                        elif extension in ["jpg", "jpeg", "png", "gif", "bmp"]:
+                            icon = ft.Icon(ft.Icons.IMAGE, size=16, color="#fbbc05")
+                        elif extension in ["mp3", "wav", "flac", "aac"]:
+                            icon = ft.Icon(ft.Icons.MUSIC_NOTE, size=16, color="#9c27b0")
+                        elif extension in ["mp4", "avi", "mov", "mkv"]:
+                            icon = ft.Icon(ft.Icons.MOVIE, size=16, color="#00bcd4")
+                        elif extension in ["zip", "rar", "tar", "gz", "7z"]:
+                            icon = ft.Icon(ft.Icons.ARCHIVE, size=16, color="#ff9800")
+                        else:
+                            # 使用FILE_COPY作为默认图标，避免使用可能不存在的FILE图标
+                            icon = ft.Icon(ft.Icons.FILE_COPY, size=16, color="#666666")
+
+                        # 创建数据行
+                        row = ft.DataRow(
+                            cells=[
+                                ft.DataCell(
+                                    ft.Container(
+                                        content=ft.Row([
+                                            icon,
+                                            ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)
+                                        ], spacing=5),
+                                        padding=ft.Padding(left=5, top=0, right=5, bottom=0)
+                                    )
+                                ),
+                                ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
+                                ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
+                            ],
+                            on_select_change=lambda e, p=path: self.open_item(p),
+                        )
+                    except Exception as e:
+                        # 如果图标创建失败，使用不带图标的行
+                        self.logger.warning(f"创建图标失败: {e}")
+                        row = ft.DataRow(
+                            cells=[
+                                ft.DataCell(ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)),
+                                ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
+                                ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
+                            ],
+                            on_select_change=lambda e, p=path: self.open_item(p),
+                        )
                     self.result_table.rows.append(row)
+                    self.logger.info(f"添加结果: {name}")
                 except Exception as e:
                     # 打印错误信息以便调试
+                    self.logger.error(f"创建行时出错: {e}")
                     print(f"Error creating row: {e}")
                     continue
 
+        self.logger.info(f"结果显示完成，添加了 {len(self.result_table.rows)} 行")
         # 强制更新页面
         self.page.update()
 
-    def browse_directory(self, e=None):
-        """浏览选择目录"""
-        try:
-            # 使用tkinter打开文件夹选择对话框
-            root = tk.Tk()
-            root.withdraw()  # 隐藏主窗口
-            root.attributes('-topmost', True)  # 确保对话框在最前面
-            
-            # 打开文件夹选择对话框
-            directory = filedialog.askdirectory(
-                title="选择扫描目录",
-                initialdir=self.directory_input.value
+    def _init_logging(self):
+        """初始化日志配置"""
+        # 确保日志目录存在
+        log_dir = Path.home() / ".xfinder" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 日志文件路径
+        log_file = log_dir / f"xfinder_{time.strftime('%Y-%m-%d')}.log"
+        
+        # 配置日志
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+        
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"日志已初始化，日志文件保存位置: {log_file}")
+    
+    def _on_keyboard_event(self, e):
+        """处理键盘事件"""
+        # 检测control+command+f快捷键
+        if e.ctrl and e.meta and e.key == "f":
+            # 聚焦到搜索框
+            self.search_field.focus()
+            self.page.update()
+            self.logger.info("快捷键 control+command+f 被触发，聚焦到搜索框")
+    
+    def rebuild_index(self, e=None):
+        """重新构建索引"""
+        directory = self.directory_input.value.strip()
+        if directory:
+            self.logger.info(f"重新构建索引，扫描目录: {directory}")
+            # 重新构建索引
+            self.event_bus.send_event("build_index")
+        else:
+            self.logger.warning("扫描目录不能为空")
+            # 显示警告对话框
+            dialog = ft.AlertDialog(
+                title=ft.Text("警告"),
+                content=ft.Text("扫描目录不能为空"),
+                actions=[
+                    ft.TextButton("确定", on_click=lambda e: setattr(self.page, "dialog", None) or self.page.update()),
+                ],
             )
-            
-            # 关闭tkinter窗口
-            root.destroy()
-            
-            # 如果选择了目录，更新输入框并重新构建索引
-            if directory and directory != self.directory_input.value:
-                self.directory_input.value = directory
-                self.page.update()
-                
-                # 重新构建索引
-                self.event_bus.send_event("build_index")
-        except Exception as e:
-            self.status_bar.content.controls[0].value = f"浏览失败: {str(e)}"
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
+    
+    def open_permission_settings(self, e=None):
+        """打开系统设置中的权限设置页面"""
+        try:
+            system = platform.system()
+            if system == "Darwin":
+                # 打开macOS的隐私与安全性设置
+                subprocess.run([
+                    "open",
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
+                ], check=True)
+            elif system == "Windows":
+                # 打开Windows的隐私设置
+                subprocess.run(["start", "ms-settings:privacy"], shell=True, check=True)
+        except Exception as ex:
+            self.logger.error(f"打开权限设置失败: {ex}")
+            # 显示错误对话框
+            dialog = ft.AlertDialog(
+                title=ft.Text("提示"),
+                content=ft.Text("请手动打开系统设置 > 隐私与安全性 > 文件和文件夹"),
+                actions=[
+                    ft.TextButton("确定", on_click=lambda e: setattr(self.page, "dialog", None) or self.page.update()),
+                ],
+            )
+            self.page.dialog = dialog
+            dialog.open = True
             self.page.update()
 
     def open_item(self, path):
