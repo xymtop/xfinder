@@ -326,8 +326,10 @@ class XFinderApp:
             ], expand=True, spacing=10),
         )
 
-        # 启动后自动构建索引
-        self.event_bus.send_event("build_index")
+        # 启动时不自动构建索引，只有当用户点击重新构建时才构建
+        self.status_text = "就绪，点击重新构建按钮开始构建索引"
+        self.status_bar.content.controls[0].value = self.status_text
+        self.page.update()
     
     def _register_event_handlers(self):
         """注册事件处理器"""
@@ -367,6 +369,15 @@ class XFinderApp:
             threading.Timer(0.1, update_ui).start()
             return
 
+        # 检查索引是否存在
+        if not self.sdk.index_exists():
+            def update_ui():
+                self.status_bar.content.controls[0].value = "索引不存在，请先构建索引"
+                self.page.update()
+            import threading
+            threading.Timer(0.1, update_ui).start()
+            return
+
         self.current_query = query
         # 获取筛选值
         self.file_type_filter = self.type_filter.value
@@ -392,6 +403,15 @@ class XFinderApp:
         if not self.sdk:
             def update_ui():
                 self.status_bar.content.controls[0].value = "SDK未初始化"
+                self.page.update()
+            import threading
+            threading.Timer(0.1, update_ui).start()
+            return
+
+        # 检查索引是否存在
+        if not self.sdk.index_exists():
+            def update_ui():
+                self.status_bar.content.controls[0].value = "索引不存在，请先构建索引"
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -592,7 +612,11 @@ class XFinderApp:
                     self.search_results = search_results
                     self.display_results()
                     count = len(self.search_results)
-                    self.status_bar.content.controls[0].value = f"找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms"
+                    display_count = min(count, 200)
+                    if count > 200:
+                        self.status_bar.content.controls[0].value = f"找到 {count} 个结果，显示前 {display_count} 个，耗时 {(end_time-start_time)*1000:.0f}ms"
+                    else:
+                        self.status_bar.content.controls[0].value = f"找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms"
                     self.page.update()
                     self.logger.info(f"搜索完成，找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms")
 
@@ -680,17 +704,20 @@ class XFinderApp:
 
     def display_results(self):
         self.logger.info(f"开始显示结果，结果数量: {len(self.search_results)}")
-        self.result_table.rows.clear()
+        
+        # 创建新的行列表
+        new_rows = []
 
         if not self.search_results:
             self.logger.info("搜索结果为空")
+            self.result_table.rows = []
             self.page.update()
             return
 
         # 确保搜索结果不为空
         if len(self.search_results) > 0:
             self.logger.info(f"搜索结果数量: {len(self.search_results)}")
-            for item in self.search_results[:500]:  # 限制显示500条
+            for item in self.search_results[:200]:  # 限制显示200条
                 try:
                     path = item.get("path", "")
                     name = item.get("name", "")
@@ -771,15 +798,16 @@ class XFinderApp:
                             ],
                             on_select_change=lambda e, p=path: self.open_item(p),
                         )
-                    self.result_table.rows.append(row)
-                    self.logger.info(f"添加结果: {name}")
+                    new_rows.append(row)
                 except Exception as e:
                     # 打印错误信息以便调试
                     self.logger.error(f"创建行时出错: {e}")
                     print(f"Error creating row: {e}")
                     continue
 
-        self.logger.info(f"结果显示完成，添加了 {len(self.result_table.rows)} 行")
+        self.logger.info(f"结果显示完成，添加了 {len(new_rows)} 行")
+        # 一次性替换所有行，避免频繁更新
+        self.result_table.rows = new_rows
         # 强制更新页面
         self.page.update()
 
@@ -884,29 +912,6 @@ class XFinderApp:
 
 
 def run_app():
-    # 删除原有的配置和索引文件
-    import shutil
-    from pathlib import Path
-    
-    # 项目根目录的配置
-    project_root = Path(__file__).parent.parent.parent
-    project_config_dir = project_root / '.xfinder'
-    if project_config_dir.exists():
-        try:
-            shutil.rmtree(project_config_dir)
-            print(f"已删除项目配置目录: {project_config_dir}")
-        except Exception as e:
-            print(f"删除项目配置目录失败: {e}")
-    
-    # 用户主目录的配置
-    user_config_dir = Path.home() / '.xfinder'
-    if user_config_dir.exists():
-        try:
-            shutil.rmtree(user_config_dir)
-            print(f"已删除用户配置目录: {user_config_dir}")
-        except Exception as e:
-            print(f"删除用户配置目录失败: {e}")
-    
     def main(page: ft.Page):
         app = XFinderApp(page)
 

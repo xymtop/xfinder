@@ -84,6 +84,17 @@ class XFinderSDK:
         
         return result
     
+    def index_exists(self):
+        """检查索引是否存在
+        
+        Returns:
+            bool: 索引是否存在
+        """
+        from pathlib import Path
+        # 检查索引数据库文件是否存在
+        db_path = config.index_dir / 'xfinder.db'
+        return db_path.exists() and db_path.stat().st_size > 0
+    
     def get_config(self):
         """获取当前配置
         
