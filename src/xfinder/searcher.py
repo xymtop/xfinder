@@ -28,6 +28,10 @@ class Searcher:
         # 获取新的数据库连接
         conn, cursor = self.connect_db()
         
+        # 调试：打印内容索引配置
+        import logging
+        logging.info(f"Content index enabled: {self.content_index_enabled}")
+        
         start_time = time.time()
         
         # 构建搜索条件
@@ -179,7 +183,11 @@ class Searcher:
         formatted_results = []
         for result in final_results:
             file_id, path, name, extension, size, mtime, is_directory = result
-            match_type = '文件名匹配' if result in results else '内容匹配'
+            # 当内容索引被禁用时，所有结果都是文件名匹配
+            if not self.content_index_enabled:
+                match_type = '文件名匹配'
+            else:
+                match_type = '文件名匹配' if result in results else '内容匹配'
             if is_directory:
                 match_type += ' (文件夹)'
             formatted_results.append({

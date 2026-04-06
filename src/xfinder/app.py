@@ -274,6 +274,7 @@ class XFinderApp:
                 ft.DataColumn(ft.Text("路径", size=12, weight=ft.FontWeight.BOLD)),
                 ft.DataColumn(ft.Text("大小", size=12, weight=ft.FontWeight.BOLD)),
                 ft.DataColumn(ft.Text("类型", size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("检索类型", size=12, weight=ft.FontWeight.BOLD)),
                 ft.DataColumn(ft.Text("修改时间", size=12, weight=ft.FontWeight.BOLD)),
             ],
             rows=[],
@@ -748,6 +749,7 @@ class XFinderApp:
                     mtime = item.get("mtime", 0)
                     is_directory = item.get("is_directory", False)
                     extension = item.get("extension", "")
+                    match_type = item.get("match_type", "未知")
 
                     size_str = self._format_size(size) if not is_directory else ""
                     mtime_str = self._format_time(mtime)
@@ -804,6 +806,7 @@ class XFinderApp:
                                 ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
                                 ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(match_type, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
                             ],
                             on_select_change=lambda e, p=path: self.open_item(p),
@@ -817,6 +820,7 @@ class XFinderApp:
                                 ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
                                 ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
+                                ft.DataCell(ft.Text(match_type, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
                             ],
                             on_select_change=lambda e, p=path: self.open_item(p),
