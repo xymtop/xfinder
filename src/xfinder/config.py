@@ -49,7 +49,8 @@ class Config:
                 config = yaml.safe_load(f)
                 return config
         except Exception as e:
-            print(f"Error loading config: {e}")
+            import logging
+            logging.error(f"Error loading config: {e}")
             return self.default_config
     
     def save_config(self, config):

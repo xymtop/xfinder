@@ -33,7 +33,6 @@ class Indexer:
         self.threads = threads
     
     def connect_db(self):
-        print("连接数据库...")
         # 确保数据库目录存在
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # 使用更高效的数据库配置
@@ -51,15 +50,11 @@ class Indexer:
         self.conn.execute('PRAGMA temp_store = MEMORY')
         # 设置缓存大小
         self.conn.execute('PRAGMA cache_size = -64000')  # 64MB
-        print("获取游标...")
         self.cursor = self.conn.cursor()
-        print("创建表...")
         self.create_tables()
-        print("数据库连接完成")
     
     def create_tables(self):
         # 文件信息表
-        print("创建files表...")
         self.cursor.execute('''
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +67,6 @@ class Indexer:
             is_directory INTEGER DEFAULT 0
         )
         ''')
-        print("files表创建完成")
         
         # 检查并添加is_directory字段（如果不存在）
         try:
@@ -80,24 +74,19 @@ class Indexer:
             columns = [column[1] for column in self.cursor.fetchall()]
             if 'is_directory' not in columns:
                 self.cursor.execute("ALTER TABLE files ADD COLUMN is_directory INTEGER DEFAULT 0")
-                print("添加is_directory字段")
         except Exception as e:
             logger.error(f"Error checking/adding is_directory column: {e}")
         
         # 全文索引表（如果启用）
         if self.content_index_enabled:
-            print("创建file_content表...")
             self.cursor.execute('''
             CREATE VIRTUAL TABLE IF NOT EXISTS file_content USING FTS5(
                 file_id,
                 content
             )
             ''')
-            print("file_content表创建完成")
         
-        print("提交事务...")
         self.conn.commit()
-        print("表创建完成")
     
     def close_db(self):
         if self.conn:
@@ -109,15 +98,13 @@ class Indexer:
         # 如果使用了自定义路径，强制重新构建索引
         if index_state_file.exists() and not self.custom_paths:
             logger.info("索引已经存在，跳过构建")
-            print("索引已经存在，跳过构建")
             return
         
         logger.info("开始构建索引...")
         logger.info(f"扫描路径: {self.scan_paths}")
-        print("正在构建索引...")
         
         self.connect_db()
-        self.clear_index()
+        # self.clear_index()
         
         total_files = 0
         content_indexed_files = 0
@@ -184,13 +171,6 @@ class Indexer:
         logger.info(f"  构建全文索引: {content_indexed_files} 个文件  ✓")
         logger.info(f"  索引构建完成，耗时 {end_time - start_time:.2f} 秒")
         
-        print(f"  扫描文件信息: {total_files} 个文件  ✓")
-        if self.content_index_enabled:
-            print(f"  构建全文索引: {content_indexed_files} 个文件  ✓")
-        else:
-            print("  全文索引: 已禁用")
-        print(f"  索引构建完成，耗时 {end_time - start_time:.2f} 秒")
-        
         # 保存索引状态
         import json
         index_state_file = self.index_dir / 'index_state.json'
@@ -202,7 +182,6 @@ class Indexer:
             }, f)
         
         self.close_db()
-        print("索引构建完成！")
     
     def scan_directory(self, directory):
         """高效扫描目录，使用多线程并行处理"""

@@ -140,7 +140,8 @@ class Searcher:
             cursor.execute(base_query, params)
             results = cursor.fetchall()
         except Exception as e:
-            print(f"Error searching: {e}")
+            import logging
+            logging.error(f"Error searching: {e}")
             results = []
         
         # 全文搜索
@@ -156,7 +157,8 @@ class Searcher:
                 cursor.execute(content_query, (parsed_query['text'],))
                 content_results = cursor.fetchall()
             except Exception as e:
-                print(f"Error in content search: {e}")
+                import logging
+                logging.error(f"Error in content search: {e}")
         
         # 合并结果，去重
         all_results = {}

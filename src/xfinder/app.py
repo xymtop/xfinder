@@ -52,13 +52,22 @@ class EventBus:
                         try:
                             handler(**kwargs)
                         except Exception as e:
-                            print(f"Error handling event {event_type}: {e}")
+                            self.logger.error(f"Error handling event {event_type}: {e}")
                 self.queue.task_done()
             except Exception:
                 continue
 
 class XFinderApp:
+    """XFinder应用程序主类
+    
+    负责初始化UI界面，处理用户交互，管理事件总线，以及协调搜索和索引功能
+    """
     def __init__(self, page: ft.Page):
+        """初始化应用程序
+        
+        Args:
+            page: Flet页面对象
+        """
         self.page = page
         self.page.title = "XFinder"
         self.page.window_width = 1200
@@ -78,17 +87,17 @@ class XFinderApp:
             self.sdk = None
             self.status_text = f"初始化失败: {str(e)}"
 
-        self.search_results = []
-        self.current_query = ""
-        self.is_building_index = False
+        self.search_results = []  # 搜索结果列表
+        self.current_query = ""  # 当前搜索查询
+        self.is_building_index = False  # 索引构建状态
 
         # 排序状态
-        self.sort_column = "name"
-        self.sort_ascending = True
+        self.sort_column = "name"  # 当前排序列
+        self.sort_ascending = True  # 是否升序排序
 
         # 筛选状态
-        self.file_type_filter = "All"
-        self.item_type_filter_value = "All"
+        self.file_type_filter = "All"  # 文件类型筛选
+        self.item_type_filter_value = "All"  # 项目类型筛选（文件/文件夹）
 
         # 列宽
         self.col_name_width = 0
@@ -487,7 +496,10 @@ class XFinderApp:
         self.page.update()
 
     def _build_index_async(self):
-        """异步构建索引"""
+        """异步构建索引
+        
+        在后台线程中构建索引，避免阻塞UI线程
+        """
         self.logger.info("开始构建索引")
         # 先在主线程中更新UI
         self.is_building_index = True
@@ -498,6 +510,7 @@ class XFinderApp:
         self.page.update()
 
         def build():
+            """索引构建线程函数"""
             try:
                 # 获取目录输入框中的路径
                 directory = self.directory_input.value.strip()
@@ -512,6 +525,7 @@ class XFinderApp:
 
                 # 在主线程中更新UI
                 def update_ui_after():
+                    """索引构建完成后的UI更新"""
                     self.is_building_index = False
                     self.progress_container.visible = False
                     self.status_text = f"索引构建完成，耗时 {result['time']*1000:.0f}ms"
@@ -526,6 +540,7 @@ class XFinderApp:
                 self.logger.error(f"索引构建失败: {error_msg}")
                 # 在主线程中更新UI
                 def update_ui_error():
+                    """索引构建失败后的UI更新"""
                     self.is_building_index = False
                     self.progress_container.visible = False
                     self.status_text = f"索引构建失败: {error_msg}"
@@ -552,18 +567,24 @@ class XFinderApp:
         self.event_bus.send_event("filter_change")
 
     def perform_search(self):
-        """在单独的线程中执行搜索，避免阻塞主线程"""
+        """在单独的线程中执行搜索，避免阻塞主线程
+        
+        从UI获取搜索参数，在后台线程中执行搜索，然后更新UI显示结果
+        """
         self.logger.info(f"开始搜索: {self.current_query}")
+        
         def search_thread():
+            """搜索线程函数"""
             try:
                 start_time = time.time()
 
+                # 映射排序字段到搜索API的排序参数
                 sort_map = {
-                    "name": "name",
-                    "path": "name",
-                    "size": "size",
-                    "mtime": "time",
-                    "type": "name",
+                    "name": "name",      # 按名称排序
+                    "path": "name",      # 按路径排序
+                    "size": "size",      # 按大小排序
+                    "mtime": "time",     # 按修改时间排序
+                    "type": "name",      # 按类型排序
                 }
                 sort_by = sort_map.get(self.sort_column, "relevance")
 
@@ -598,21 +619,22 @@ class XFinderApp:
 
                 # 对结果排序
                 sort_key_map = {
-                    "name": lambda x: x.get("name", "").lower(),
-                    "path": lambda x: x.get("path", "").lower(),
-                    "size": lambda x: x.get("size", 0),
-                    "mtime": lambda x: x.get("mtime", 0),
-                    "type": lambda x: x.get("extension", ""),
+                    "name": lambda x: x.get("name", "").lower(),  # 按名称小写排序
+                    "path": lambda x: x.get("path", "").lower(),  # 按路径小写排序
+                    "size": lambda x: x.get("size", 0),          # 按大小排序
+                    "mtime": lambda x: x.get("mtime", 0),         # 按修改时间排序
+                    "type": lambda x: x.get("extension", ""),     # 按扩展名排序
                 }
                 key_func = sort_key_map.get(self.sort_column, sort_key_map["name"])
                 search_results.sort(key=key_func, reverse=not self.sort_ascending)
 
                 # 在主线程中更新UI
                 def update_ui():
+                    """搜索完成后的UI更新"""
                     self.search_results = search_results
                     self.display_results()
                     count = len(self.search_results)
-                    display_count = min(count, 200)
+                    display_count = min(count, 200)  # 限制显示结果数量
                     if count > 200:
                         self.status_bar.content.controls[0].value = f"找到 {count} 个结果，显示前 {display_count} 个，耗时 {(end_time-start_time)*1000:.0f}ms"
                     else:
@@ -627,6 +649,7 @@ class XFinderApp:
                 self.logger.error(f"搜索失败: {str(e)}")
                 # 在主线程中更新UI
                 def update_ui_error():
+                    """搜索失败后的UI更新"""
                     self.status_bar.content.controls[0].value = f"搜索失败: {str(e)}"
                     self.page.update()
 
@@ -802,7 +825,6 @@ class XFinderApp:
                 except Exception as e:
                     # 打印错误信息以便调试
                     self.logger.error(f"创建行时出错: {e}")
-                    print(f"Error creating row: {e}")
                     continue
 
         self.logger.info(f"结果显示完成，添加了 {len(new_rows)} 行")

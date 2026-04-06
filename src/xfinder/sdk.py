@@ -7,7 +7,10 @@ from .config import config
 
 
 class XFinderSDK:
-    """xfinder SDK类，提供对外接口"""
+    """XFinder SDK类，提供对外接口
+    
+    封装了索引构建和搜索功能，为应用程序提供统一的API
+    """
     
     def __init__(self, custom_paths=None, threads=32):
         """初始化SDK
@@ -16,19 +19,23 @@ class XFinderSDK:
             custom_paths: 自定义扫描路径列表，None表示使用配置文件中的路径
             threads: 扫描和索引的线程数量
         """
-        self.custom_paths = custom_paths
-        self.threads = threads
-        self.indexer = None
-        self.searcher = None
+        self.custom_paths = custom_paths  # 自定义扫描路径
+        self.threads = threads  # 扫描和索引的线程数量
+        self.indexer = None  # 索引器实例
+        self.searcher = None  # 搜索器实例
     
     def build_index(self, directory=None):
         """构建索引
+        
+        在指定目录中扫描文件并构建搜索索引
         
         Args:
             directory: 自定义扫描目录，None表示使用配置文件中的路径
             
         Returns:
-            dict: 索引构建结果，包含文件数、耗时等信息
+            dict: 索引构建结果，包含状态和耗时等信息
+                - status: 构建状态，成功返回'success'
+                - time: 构建耗时（秒）
         """
         import time
         
@@ -58,6 +65,8 @@ class XFinderSDK:
     def search(self, query=None, folder_name=None, file_name=None, file_type=None, size_min=None, size_max=None, date_min=None, date_max=None, limit=20, sort_by='relevance'):
         """搜索文件
         
+        根据指定的条件搜索文件
+        
         Args:
             query: 搜索关键词
             folder_name: 文件夹名称
@@ -72,6 +81,9 @@ class XFinderSDK:
         
         Returns:
             dict: 搜索结果，包含结果列表、总数、耗时等信息
+                - results: 搜索结果列表
+                - count: 结果数量
+                - time: 搜索耗时（秒）
         """
         # 如果搜索器未初始化，初始化它
         if not self.searcher:
@@ -86,6 +98,8 @@ class XFinderSDK:
     
     def index_exists(self):
         """检查索引是否存在
+        
+        检查索引数据库文件是否存在且大小大于0
         
         Returns:
             bool: 索引是否存在
