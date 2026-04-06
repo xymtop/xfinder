@@ -8,8 +8,17 @@ load_dotenv()
 
 class Config:
     def __init__(self):
-        # 使用项目根目录作为配置和索引的存储位置
-        self.project_root = Path(__file__).parent.parent.parent  # src/xfinder/../.. = 项目根目录
+        # 对于打包后的应用程序，使用用户主目录作为配置和索引的存储位置
+        # 对于开发环境，使用项目根目录
+        import sys
+        if hasattr(sys, '_MEIPASS'):
+            # 打包后的环境
+            self.project_root = Path.home()
+        else:
+            # 开发环境
+            self.project_root = Path(__file__).parent.parent.parent  # src/xfinder/../.. = 项目根目录
+        
+        # 使用用户主目录下的 .xfinder 目录作为配置和索引的存储位置
         self.config_dir = self.project_root / '.xfinder'
         self.config_file = self.config_dir / 'config.yaml'
         self.index_dir = self.config_dir / 'index'
@@ -34,6 +43,12 @@ class Config:
         self._load_from_env()
     
     def load_config(self):
+        print(f"Loading config from: {self.config_file}")
+        
+        # 数据库路径
+        db_path = self.index_dir / 'xfinder.db'
+        print(f"Database path: {db_path}")
+        
         if not self.config_dir.exists():
             self.config_dir.mkdir(parents=True, exist_ok=True)
         
@@ -41,6 +56,7 @@ class Config:
             self.index_dir.mkdir(parents=True, exist_ok=True)
         
         if not self.config_file.exists():
+            print(f"Config file not found, creating default config at: {self.config_file}")
             self.save_config(self.default_config)
             return self.default_config
         
@@ -49,7 +65,6 @@ class Config:
                 config = yaml.safe_load(f)
                 return config
         except Exception as e:
-            import logging
             logging.error(f"Error loading config: {e}")
             return self.default_config
     
