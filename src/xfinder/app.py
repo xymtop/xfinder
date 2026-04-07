@@ -9,6 +9,7 @@ from tkinter import filedialog
 from queue import Queue
 import logging
 import os
+import json
 from xfinder.sdk import get_sdk
 
 class EventBus:
@@ -89,6 +90,9 @@ class XFinderApp:
             self.status_text = f"初始化失败: {str(e)}"
 
         self.search_results = []  # 搜索结果列表
+        self.visible_results = []  # 当前表格展示的结果（最多200）
+        self.selected_row_index = -1  # 键盘选中行
+        self.result_keyboard_mode = False  # 是否在结果区键盘导航模式
         self.current_query = ""  # 当前搜索查询
         self.is_building_index = False  # 索引构建状态
 
@@ -128,6 +132,7 @@ class XFinderApp:
         self.search_field = ft.TextField(
             hint_text="输入关键词，实时搜索文件...",
             on_change=self.on_search,
+            on_focus=lambda e: setattr(self, "result_keyboard_mode", False),
             autofocus=True,
             border=ft.InputBorder.OUTLINE,
             border_radius=10,
@@ -277,12 +282,24 @@ class XFinderApp:
             ),
         )
 
+        syntax_help = ft.Container(
+            content=ft.Text(
+                "语法: type:pdf  size>10MB  modified:7d  name:report  path:project  in:Downloads  is:dir|file",
+                size=11,
+                color="#64748b",
+            ),
+            padding=ft.Padding(left=14, top=6, right=14, bottom=6),
+            bgcolor="#eef2ff",
+            border=ft.border.only(bottom=ft.BorderSide(1, "#dbe3ff")),
+        )
+
+        self.result_hint_text = ft.Text("双击可打开文件或文件夹", size=11, color="#94a3b8")
         result_header = ft.Container(
             content=ft.Row(
                 [
                     ft.Text("搜索结果", size=12, weight=ft.FontWeight.W_600, color="#334155"),
                     ft.Container(expand=True),
-                    ft.Text("双击可打开文件或文件夹", size=11, color="#94a3b8"),
+                    self.result_hint_text,
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
@@ -334,12 +351,15 @@ class XFinderApp:
             margin=ft.Margin(left=12, top=6, right=12, bottom=0),
         )
 
+        self.status_label = ft.Text(self.status_text, size=11, color="#333333")
+        self.metrics_label = ft.Text("命中: -   耗时: -   查询: -", size=11, color="#7a7f87")
+
         # 状态栏
         self.status_bar = ft.Container(
             content=ft.Row([
-                ft.Text(self.status_text, size=11, color="#333333"),
+                self.status_label,
                 ft.Container(expand=True),
-                ft.Text("XFinder Desktop Search", size=11, color="#7a7f87"),
+                self.metrics_label,
             ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding(left=12, top=6, right=12, bottom=6),
             bgcolor="#f8fafc",
@@ -372,6 +392,7 @@ class XFinderApp:
         self.page.add(
             ft.Column([
                 search_toolbar,
+                syntax_help,
                 self.header_row,
                 result_header,
                 self.result_container,
@@ -382,8 +403,20 @@ class XFinderApp:
 
         # 启动时不自动构建索引，只有当用户点击重新构建时才构建
         self.status_text = "就绪，点击重新构建按钮开始构建索引"
-        self.status_bar.content.controls[0].value = self.status_text
+        self._set_status(self.status_text)
+        self._set_metrics()
         self.page.update()
+
+    def _set_status(self, text):
+        """更新状态栏左侧文案。"""
+        self.status_label.value = text
+
+    def _set_metrics(self, count=None, elapsed_ms=None, query=None):
+        """更新状态栏右侧性能面板。"""
+        count_text = "-" if count is None else str(count)
+        elapsed_text = "-" if elapsed_ms is None else f"{elapsed_ms:.0f}ms"
+        query_text = "-" if not query else query
+        self.metrics_label.value = f"命中: {count_text}   耗时: {elapsed_text}   查询: {query_text}"
     
     def _register_event_handlers(self):
         """注册事件处理器"""
@@ -396,7 +429,7 @@ class XFinderApp:
         """处理搜索事件"""
         if self.is_building_index:
             def update_ui():
-                self.status_bar.content.controls[0].value = "索引构建中，请稍候..."
+                self._set_status("索引构建中，请稍候...")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -409,7 +442,8 @@ class XFinderApp:
             def update_ui():
                 self.search_results = []
                 self.result_table.rows.clear()
-                self.status_bar.content.controls[0].value = "输入关键词开始搜索"
+                self._set_status("输入关键词开始搜索")
+                self._set_metrics()
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -417,7 +451,7 @@ class XFinderApp:
 
         if not self.sdk:
             def update_ui():
-                self.status_bar.content.controls[0].value = "SDK未初始化"
+                self._set_status("SDK未初始化")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -426,7 +460,7 @@ class XFinderApp:
         # 检查索引是否存在
         if not self.sdk.index_exists():
             def update_ui():
-                self.status_bar.content.controls[0].value = "索引不存在，请先构建索引"
+                self._set_status("索引不存在，请先构建索引")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -444,7 +478,7 @@ class XFinderApp:
         """处理筛选条件变化事件"""
         if self.is_building_index:
             def update_ui():
-                self.status_bar.content.controls[0].value = "索引构建中，请稍候..."
+                self._set_status("索引构建中，请稍候...")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -456,7 +490,7 @@ class XFinderApp:
 
         if not self.sdk:
             def update_ui():
-                self.status_bar.content.controls[0].value = "SDK未初始化"
+                self._set_status("SDK未初始化")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -465,7 +499,7 @@ class XFinderApp:
         # 检查索引是否存在
         if not self.sdk.index_exists():
             def update_ui():
-                self.status_bar.content.controls[0].value = "索引不存在，请先构建索引"
+                self._set_status("索引不存在，请先构建索引")
                 self.page.update()
             import threading
             threading.Timer(0.1, update_ui).start()
@@ -549,7 +583,8 @@ class XFinderApp:
         # 先在主线程中更新UI
         self.is_building_index = True
         self.progress_container.visible = True
-        self.status_bar.content.controls[0].value = "正在构建索引..."
+        self._set_status("正在构建索引...")
+        self._set_metrics()
         
         # 强制更新页面
         self.page.update()
@@ -574,7 +609,7 @@ class XFinderApp:
                     self.is_building_index = False
                     self.progress_container.visible = False
                     self.status_text = f"索引构建完成，耗时 {result['time']*1000:.0f}ms"
-                    self.status_bar.content.controls[0].value = self.status_text
+                    self._set_status(self.status_text)
                     self.page.update()
                 
                 # 使用定时器在主线程中更新UI
@@ -589,7 +624,7 @@ class XFinderApp:
                     self.is_building_index = False
                     self.progress_container.visible = False
                     self.status_text = f"索引构建失败: {error_msg}"
-                    self.status_bar.content.controls[0].value = self.status_text
+                    self._set_status(self.status_text)
                     self.page.update()
                 
                 # 使用定时器在主线程中更新UI
@@ -677,13 +712,15 @@ class XFinderApp:
                 def update_ui():
                     """搜索完成后的UI更新"""
                     self.search_results = search_results
+                    self.selected_row_index = 0 if self.search_results else -1
                     self.display_results()
                     count = len(self.search_results)
                     display_count = min(count, 200)  # 限制显示结果数量
                     if count > 200:
-                        self.status_bar.content.controls[0].value = f"找到 {count} 个结果，显示前 {display_count} 个，耗时 {(end_time-start_time)*1000:.0f}ms"
+                        self._set_status(f"找到 {count} 个结果，显示前 {display_count} 个，耗时 {(end_time-start_time)*1000:.0f}ms")
                     else:
-                        self.status_bar.content.controls[0].value = f"找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms"
+                        self._set_status(f"找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms")
+                    self._set_metrics(count=count, elapsed_ms=(end_time-start_time)*1000, query=self.current_query)
                     self.page.update()
                     self.logger.info(f"搜索完成，找到 {count} 个结果，耗时 {(end_time-start_time)*1000:.0f}ms")
 
@@ -695,7 +732,8 @@ class XFinderApp:
                 # 在主线程中更新UI
                 def update_ui_error():
                     """搜索失败后的UI更新"""
-                    self.status_bar.content.controls[0].value = f"搜索失败: {str(e)}"
+                    self._set_status(f"搜索失败: {str(e)}")
+                    self._set_metrics(query=self.current_query)
                     self.page.update()
 
                 # 使用定时器在主线程中更新UI
@@ -737,6 +775,13 @@ class XFinderApp:
         """格式化时间戳"""
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
 
+    def _icon(self, primary, fallback, size=16, color="#64748b"):
+        """兼容不同 Flet 版本的图标常量。"""
+        icon_name = getattr(ft.Icons, primary, None)
+        if icon_name is None:
+            icon_name = getattr(ft.Icons, fallback, ft.Icons.INSERT_DRIVE_FILE)
+        return ft.Icon(icon_name, size=size, color=color)
+
     def _get_file_type(self, extension, is_directory):
         """获取文件类型描述"""
         if is_directory:
@@ -775,17 +820,23 @@ class XFinderApp:
         
         # 创建新的行列表
         new_rows = []
+        self.visible_results = self.search_results[:200]
 
         if not self.search_results:
             self.logger.info("搜索结果为空")
             self.result_table.rows = []
+            self.selected_row_index = -1
+            self.result_hint_text.value = "未找到结果，可尝试放宽筛选或调整关键词"
             self.page.update()
             return
+
+        if self.selected_row_index >= len(self.visible_results):
+            self.selected_row_index = len(self.visible_results) - 1
 
         # 确保搜索结果不为空
         if len(self.search_results) > 0:
             self.logger.info(f"搜索结果数量: {len(self.search_results)}")
-            for item in self.search_results[:200]:  # 限制显示200条
+            for row_idx, item in enumerate(self.visible_results):  # 限制显示200条
                 try:
                     path = item.get("path", "")
                     name = item.get("name", "")
@@ -801,65 +852,102 @@ class XFinderApp:
                     # 根据文件类型选择图标
                     try:
                         if is_directory:
-                            icon = ft.Icon(ft.Icons.FOLDER, size=16, color="#3b82f6")
+                            icon = self._icon("FOLDER", "FOLDER_OPEN", size=16, color="#3b82f6")
                         elif ext in ["py", "js", "ts", "tsx", "jsx", "java", "go", "rs", "cpp", "c", "h", "php"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#3776ab")
+                            icon = self._icon("CODE", "TERMINAL", size=16, color="#3776ab")
                         elif ext in ["html", "xml"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#e34f26")
+                            icon = self._icon("CODE", "TERMINAL", size=16, color="#e34f26")
                         elif ext in ["css", "scss", "less"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#1572b6")
+                            icon = self._icon("CODE", "TERMINAL", size=16, color="#1572b6")
                         elif ext in ["json", "yaml", "yml", "toml", "ini", "env"]:
-                            icon = ft.Icon(ft.Icons.DATA_OBJECT, size=16, color="#475569")
+                            icon = self._icon("DATA_OBJECT", "DESCRIPTION", size=16, color="#475569")
                         elif ext in ["md", "txt", "rtf"]:
-                            icon = ft.Icon(ft.Icons.DESCRIPTION, size=16, color="#64748b")
+                            icon = self._icon("DESCRIPTION", "TEXT_SNIPPET", size=16, color="#64748b")
                         elif ext in ["pdf"]:
-                            icon = ft.Icon(ft.Icons.PICTURE_AS_PDF, size=16, color="#ea4335")
+                            icon = self._icon("PICTURE_AS_PDF", "DESCRIPTION", size=16, color="#ea4335")
                         elif ext in ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"]:
-                            icon = ft.Icon(ft.Icons.IMAGE, size=16, color="#fbbc05")
+                            icon = self._icon("IMAGE", "PHOTO", size=16, color="#fbbc05")
                         elif ext in ["mp3", "wav", "flac", "aac", "m4a", "ogg"]:
-                            icon = ft.Icon(ft.Icons.MUSIC_NOTE, size=16, color="#9c27b0")
+                            icon = self._icon("MUSIC_NOTE", "AUDIO_FILE", size=16, color="#9c27b0")
                         elif ext in ["mp4", "avi", "mov", "mkv", "webm"]:
-                            icon = ft.Icon(ft.Icons.MOVIE, size=16, color="#00bcd4")
+                            icon = self._icon("MOVIE", "VIDEOCAM", size=16, color="#00bcd4")
                         elif ext in ["zip", "rar", "tar", "gz", "7z", "xz"]:
-                            icon = ft.Icon(ft.Icons.ARCHIVE, size=16, color="#ff9800")
+                            icon = self._icon("ARCHIVE", "FOLDER_ZIP", size=16, color="#ff9800")
                         elif ext in ["doc", "docx", "pages"]:
-                            icon = ft.Icon(ft.Icons.ARTICLE, size=16, color="#2563eb")
+                            icon = self._icon("ARTICLE", "DESCRIPTION", size=16, color="#2563eb")
                         elif ext in ["xls", "xlsx", "csv", "numbers"]:
-                            icon = ft.Icon(ft.Icons.TABLE_CHART, size=16, color="#16a34a")
+                            icon = self._icon("TABLE_CHART", "BAR_CHART", size=16, color="#16a34a")
                         elif ext in ["ppt", "pptx", "key"]:
-                            icon = ft.Icon(ft.Icons.SLIDESHOW, size=16, color="#f97316")
+                            icon = self._icon("SLIDESHOW", "LIVE_TV", size=16, color="#f97316")
                         else:
-                            icon = ft.Icon(ft.Icons.INSERT_DRIVE_FILE, size=16, color="#64748b")
+                            icon = self._icon("INSERT_DRIVE_FILE", "DESCRIPTION", size=16, color="#64748b")
+
+                        def wrap_context_menu(content, target_path, enable_double_open=False):
+                            return ft.GestureDetector(
+                                content=content,
+                                on_double_tap=(lambda e, p=target_path: self.open_item(p)) if enable_double_open else None,
+                                on_secondary_tap=lambda e, p=target_path: self.show_context_menu(p),
+                                on_secondary_tap_up=lambda e, p=target_path: self.show_context_menu(p),
+                                on_tap_down=lambda e, p=target_path: self._maybe_show_context_menu(e, p),
+                            )
 
                         # 创建数据行
                         row = ft.DataRow(
                             cells=[
                                 ft.DataCell(
-                                    ft.Container(
-                                        content=ft.Row([
-                                            icon,
-                                            ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)
-                                        ], spacing=5),
-                                        padding=ft.Padding(left=5, top=0, right=5, bottom=0)
-                                    )
+                                    wrap_context_menu(
+                                        content=ft.Container(
+                                            content=ft.Row([
+                                                icon,
+                                                ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS),
+                                                ft.IconButton(
+                                                    icon=ft.Icons.MORE_HORIZ,
+                                                    icon_size=14,
+                                                    style=ft.ButtonStyle(
+                                                        padding=2,
+                                                        shape=ft.RoundedRectangleBorder(radius=6),
+                                                    ),
+                                                    on_click=lambda e, p=path: self.show_context_menu(p),
+                                                ),
+                                            ], spacing=5),
+                                            padding=ft.Padding(left=5, top=0, right=5, bottom=0)
+                                        ),
+                                        target_path=path,
+                                        enable_double_open=True,
+                                    ),
                                 ),
-                                ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
-                                ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
+                                ft.DataCell(wrap_context_menu(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS), path)),
+                                ft.DataCell(wrap_context_menu(ft.Text(size_str, size=11, color="#666666"), path)),
+                                ft.DataCell(wrap_context_menu(ft.Text(mtime_str, size=11, color="#666666"), path)),
                             ],
-                            on_select_change=lambda e, p=path: self.open_item(p),
+                            on_select_change=lambda e: None,
+                            selected=(row_idx == self.selected_row_index),
                         )
                     except Exception as e:
-                        # 如果图标创建失败，使用不带图标的行
+                        # 如果图标创建失败，降级为默认图标
                         self.logger.warning(f"创建图标失败: {e}")
+                        fallback_icon = self._icon("INSERT_DRIVE_FILE", "DESCRIPTION", size=16, color="#64748b")
                         row = ft.DataRow(
                             cells=[
-                                ft.DataCell(ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)),
-                                ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
-                                ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
+                                ft.DataCell(
+                                    wrap_context_menu(
+                                        content=ft.Row(
+                                            [
+                                                fallback_icon,
+                                                ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS),
+                                            ],
+                                            spacing=5,
+                                        ),
+                                        target_path=path,
+                                        enable_double_open=True,
+                                    ),
+                                ),
+                                ft.DataCell(wrap_context_menu(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS), path)),
+                                ft.DataCell(wrap_context_menu(ft.Text(size_str, size=11, color="#666666"), path)),
+                                ft.DataCell(wrap_context_menu(ft.Text(mtime_str, size=11, color="#666666"), path)),
                             ],
-                            on_select_change=lambda e, p=path: self.open_item(p),
+                            on_select_change=lambda e: None,
+                            selected=(row_idx == self.selected_row_index),
                         )
                     new_rows.append(row)
                 except Exception as e:
@@ -870,6 +958,10 @@ class XFinderApp:
         self.logger.info(f"结果显示完成，添加了 {len(new_rows)} 行")
         # 一次性替换所有行，避免频繁更新
         self.result_table.rows = new_rows
+        if len(self.visible_results) > 0:
+            self.result_hint_text.value = "上下键选择，Enter打开，Cmd/Ctrl+C复制路径"
+        else:
+            self.result_hint_text.value = "未找到结果，可尝试放宽筛选或调整关键词"
         # 强制更新页面
         self.page.update()
 
@@ -909,6 +1001,111 @@ class XFinderApp:
             self.search_field.focus()
             self.page.update()
             self.logger.info("快捷键 control+command+f 被触发，聚焦到搜索框")
+            return
+
+        if e.key == "Arrow Down":
+            self.move_selection(1)
+            return
+
+        if e.key == "Arrow Up":
+            self.move_selection(-1)
+            return
+
+        if e.key == "Enter":
+            if self.result_keyboard_mode:
+                self.open_selected_item()
+            else:
+                self.on_search()
+            return
+
+        if (e.meta or e.ctrl) and e.key.lower() == "c":
+            self.copy_selected_path()
+
+    def move_selection(self, step):
+        if not self.visible_results:
+            return
+        self.result_keyboard_mode = True
+        if self.selected_row_index < 0:
+            self.selected_row_index = 0 if step > 0 else len(self.visible_results) - 1
+        else:
+            self.selected_row_index = max(0, min(len(self.visible_results) - 1, self.selected_row_index + step))
+        self.display_results()
+
+    def open_selected_item(self):
+        if 0 <= self.selected_row_index < len(self.visible_results):
+            self.open_item(self.visible_results[self.selected_row_index].get("path", ""))
+
+    def copy_selected_path(self):
+        if 0 <= self.selected_row_index < len(self.visible_results):
+            self.copy_path(self.visible_results[self.selected_row_index].get("path", ""))
+
+    def copy_path(self, path):
+        if not path:
+            return
+        try:
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.run(["pbcopy"], input=path.encode("utf-8"), check=True)
+            elif system == "Windows":
+                subprocess.run(["clip"], input=path.encode("utf-16le"), check=True)
+            else:
+                subprocess.run(["xclip", "-selection", "clipboard"], input=path.encode("utf-8"), check=True)
+            self._set_status("已复制路径到剪贴板")
+            self._set_metrics(query=path)
+            self.page.update()
+        except Exception as ex:
+            self._set_status(f"复制路径失败: {str(ex)}")
+            self.page.update()
+
+    def open_parent_path(self, path):
+        if not path:
+            return
+        parent = str(Path(path).parent)
+        self.open_item(parent)
+
+    def show_context_menu(self, path):
+        """显示文件列表右键菜单。"""
+        menu = ft.AlertDialog(
+            title=ft.Text("文件操作"),
+            content=ft.Text(path, size=11, color="#64748b"),
+            actions=[
+                ft.TextButton("打开", on_click=lambda e, p=path: self._run_menu_action(lambda: self.open_item(p))),
+                ft.TextButton("打开所在路径", on_click=lambda e, p=path: self._run_menu_action(lambda: self.open_parent_path(p))),
+                ft.TextButton("复制", on_click=lambda e, p=path: self._run_menu_action(lambda: self.copy_path(p))),
+                ft.TextButton("取消", on_click=lambda e: self._close_dialog_and(None)),
+            ],
+        )
+        self.page.dialog = menu
+        menu.open = True
+        self.page.update()
+
+    def _run_menu_action(self, action):
+        self._close_dialog_and(None)
+        action()
+
+    def _close_dialog_and(self, action):
+        if self.page.dialog:
+            self.page.dialog.open = False
+        self.page.update()
+        if action:
+            action()
+
+    def _maybe_show_context_menu(self, e, path):
+        """尝试从 tap_down 事件中识别右键。"""
+        try:
+            data = json.loads(e.data) if isinstance(e.data, str) and e.data else {}
+        except Exception:
+            data = {}
+        text = str(e.data).lower() if e.data else ""
+        # Flet/平台差异较大，兼容常见右键标记
+        is_secondary = (
+            data.get("button") in (2, "2", "secondary") or
+            "secondary" in text or
+            '"button":2' in text or
+            "'button': 2" in text
+        )
+        if is_secondary:
+            self.show_context_menu(path)
     
     def rebuild_index(self, e=None):
         """重新构建索引"""
@@ -969,7 +1166,7 @@ class XFinderApp:
             else:
                 subprocess.run(["xdg-open", path], check=True)
         except Exception as e:
-            self.status_bar.content.controls[0].value = f"打开失败: {str(e)}"
+            self._set_status(f"打开失败: {str(e)}")
             self.page.update()
 
 

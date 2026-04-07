@@ -4,7 +4,6 @@ import time
 import logging
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
 from .config import config
 
 # 配置日志
@@ -85,26 +84,28 @@ class Indexer:
                 content
             )
             ''')
+
+        self.create_indexes()
         
         self.conn.commit()
+
+    def create_indexes(self):
+        """为高频过滤和排序字段创建索引。"""
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_name ON files(name)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_size ON files(size)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_mtime ON files(mtime)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)")
     
     def close_db(self):
         if self.conn:
             self.conn.close()
     
     def build_index(self):
-        # 检查索引是否已经存在
-        index_state_file = self.index_dir / 'index_state.json'
-        # 如果使用了自定义路径，强制重新构建索引
-        if index_state_file.exists() and not self.custom_paths:
-            logger.info("索引已经存在，跳过构建")
-            return
-        
         logger.info("开始构建索引...")
         logger.info(f"扫描路径: {self.scan_paths}")
         
         self.connect_db()
-        # self.clear_index()
         
         total_files = 0
         content_indexed_files = 0
@@ -149,14 +150,20 @@ class Indexer:
         # 批量插入文件信息
         if all_files:
             logger.info("开始插入文件信息...")
-            # 分批处理
-            batch_size = 10000
+            existing_mtime_map = self._get_existing_mtime_map([f["path"] for f in all_files])
             self.batch_insert_files(all_files)
+            self._delete_removed_entries(all_files)
+        else:
+            existing_mtime_map = {}
         
         # 构建全文索引
         if self.content_index_enabled:
             logger.info("开始构建全文索引...")
-            content_files = [f for f in all_files if self._should_index_content(f)]
+            content_files = [
+                f for f in all_files
+                if self._should_index_content(f)
+                and (f["path"] not in existing_mtime_map or existing_mtime_map[f["path"]] != f["mtime"])
+            ]
             content_indexed_files = len(content_files)
             logger.info(f"需要索引内容的文件数: {content_indexed_files}")
             
@@ -185,13 +192,10 @@ class Indexer:
     
     def scan_directory(self, directory):
         """高效扫描目录，使用多线程并行处理"""
-        all_files = []
-        
         def scan_dir(path):
             """扫描单个目录"""
-            items = []
             try:
-                items = list(path.iterdir())
+                entries = list(os.scandir(path))
             except Exception as e:
                 logger.error(f"Error scanning directory {path}: {e}")
                 return [], []
@@ -199,51 +203,50 @@ class Indexer:
             files = []
             subdirs = []
             
-            for item in items:
-                if item.name in self.exclude_dirs:
+            for entry in entries:
+                if entry.name in self.exclude_dirs:
                     continue
                 
                 try:
-                    # 检查是否是目录
                     try:
-                        is_dir = item.is_dir()
+                        is_dir = entry.is_dir(follow_symlinks=False)
                     except Exception:
                         is_dir = False
                     
-                    # 检查是否是文件
                     try:
-                        is_file = item.is_file()
+                        is_file = entry.is_file(follow_symlinks=False)
                     except Exception:
                         is_file = False
                     
                     if is_dir:
-                        subdirs.append(item)
-                        # 存储文件夹信息
+                        subdirs.append(Path(entry.path))
                         try:
+                            stat = entry.stat(follow_symlinks=False)
                             files.append({
-                                'path': str(item),
-                                'name': item.name,
-                                'extension': '',  # 文件夹没有扩展名
-                                'size': 0,  # 文件夹大小设为0
-                                'mtime': int(item.stat().st_mtime),
-                                'is_directory': True  # 标记为文件夹
+                                'path': str(entry.path),
+                                'name': entry.name,
+                                'extension': '',
+                                'size': 0,
+                                'mtime': int(stat.st_mtime),
+                                'is_directory': True
                             })
                         except Exception as e:
-                            logger.error(f"Error processing directory {item}: {e}")
+                            logger.error(f"Error processing directory {entry.path}: {e}")
                     elif is_file:
                         try:
+                            stat = entry.stat(follow_symlinks=False)
                             files.append({
-                                'path': str(item),
-                                'name': item.name,
-                                'extension': item.suffix,
-                                'size': item.stat().st_size,
-                                'mtime': int(item.stat().st_mtime),
-                                'is_directory': False  # 标记为文件
+                                'path': str(entry.path),
+                                'name': entry.name,
+                                'extension': Path(entry.name).suffix,
+                                'size': stat.st_size,
+                                'mtime': int(stat.st_mtime),
+                                'is_directory': False
                             })
                         except Exception as e:
-                            logger.error(f"Error processing file {item}: {e}")
+                            logger.error(f"Error processing file {entry.path}: {e}")
                 except Exception as e:
-                    logger.error(f"Error processing item {item}: {e}")
+                    logger.error(f"Error processing item {entry.path}: {e}")
             
             return files, subdirs
         
@@ -305,7 +308,16 @@ class Indexer:
             total = len(files)
             
             # 准备SQL语句
-            sql = "INSERT OR REPLACE INTO files (path, name, extension, size, mtime, is_directory) VALUES (?, ?, ?, ?, ?, ?)"
+            sql = """
+            INSERT INTO files (path, name, extension, size, mtime, is_directory)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET
+                name=excluded.name,
+                extension=excluded.extension,
+                size=excluded.size,
+                mtime=excluded.mtime,
+                is_directory=excluded.is_directory
+            """
             
             # 准备数据
             data = []
@@ -315,13 +327,13 @@ class Indexer:
                 # 当数据达到批量大小时，执行插入
                 if len(data) >= batch_size:
                     self.cursor.executemany(sql, data)
-                    logger.info(f"  已插入 {min(len(data), total)}/{total} 个文件")
+                    logger.info(f"  已处理 {min(len(data), total)}/{total} 个文件")
                     data = []
             
             # 插入剩余数据
             if data:
                 self.cursor.executemany(sql, data)
-                logger.info(f"  已插入 {total}/{total} 个文件")
+                logger.info(f"  已处理 {total}/{total} 个文件")
             
             # 一次性提交事务
             self.conn.commit()
@@ -330,6 +342,47 @@ class Indexer:
             logger.error(f"Error inserting files: {e}")
             # 发生错误时回滚事务
             self.conn.rollback()
+
+    def _get_existing_mtime_map(self, paths):
+        """批量读取已有文件 mtime，用于增量内容索引判断。"""
+        if not paths:
+            return {}
+        result = {}
+        batch_size = 1000
+        for i in range(0, len(paths), batch_size):
+            batch_paths = paths[i:i+batch_size]
+            placeholders = ",".join(["?"] * len(batch_paths))
+            query = f"SELECT path, mtime FROM files WHERE path IN ({placeholders})"
+            self.cursor.execute(query, batch_paths)
+            for row_path, row_mtime in self.cursor.fetchall():
+                result[row_path] = row_mtime
+        return result
+
+    def _delete_removed_entries(self, all_files):
+        """删除已不在扫描目录中的历史索引记录。"""
+        current_paths = {f["path"] for f in all_files}
+        if not self.scan_paths:
+            return
+
+        stale_ids = []
+        for scan_path in self.scan_paths:
+            like_pattern = str(Path(scan_path)) + "%"
+            self.cursor.execute("SELECT id, path FROM files WHERE path LIKE ?", (like_pattern,))
+            for file_id, path in self.cursor.fetchall():
+                if path not in current_paths:
+                    stale_ids.append(file_id)
+
+        if not stale_ids:
+            return
+
+        logger.info(f"检测到 {len(stale_ids)} 条失效索引，准备清理")
+        batch_size = 1000
+        for i in range(0, len(stale_ids), batch_size):
+            batch_ids = stale_ids[i:i+batch_size]
+            placeholders = ",".join(["?"] * len(batch_ids))
+            if self.content_index_enabled:
+                self.cursor.execute(f"DELETE FROM file_content WHERE file_id IN ({placeholders})", batch_ids)
+            self.cursor.execute(f"DELETE FROM files WHERE id IN ({placeholders})", batch_ids)
     
     def batch_insert_content(self, files):
         if not files:
@@ -355,88 +408,59 @@ class Indexer:
             logger.error(f"Error getting file IDs: {e}")
             return
         
-        # 定义函数读取文件内容
         def process_file(file_path):
-            content = self._read_file_content(file_path)
-            return file_path, content
-        
-        # 使用线程池并行读取文件内容
-        max_workers = min(self.threads, os.cpu_count() * 4)  # 增加线程数以提高性能
-        content_results = []
-        
-        # 分批处理文件
-        batch_size = 1000
-        for i in range(0, len(files), batch_size):
-            batch_files = files[i:i+batch_size]
-            batch_futures = []
-            
+            return file_path, self._read_file_content(file_path)
+
+        # 边读取边写入，避免在内存中累积大量文件内容
+        try:
+            self.conn.execute('BEGIN TRANSACTION')
+
+            insert_content_sql = "INSERT OR REPLACE INTO file_content (file_id, content) VALUES (?, ?)"
+            indexed_file_ids = []
+            pending_rows = []
+            flush_size = 2000
+            indexed_count = 0
+
+            candidate_paths = [f["path"] for f in files if f["path"] in file_ids]
+            max_workers = min(self.threads, os.cpu_count() * 4)
+            total = len(candidate_paths)
+
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                for file in batch_files:
-                    if file['path'] in file_ids:
-                        future = executor.submit(process_file, file['path'])
-                        batch_futures.append(future)
-                
-                for future in as_completed(batch_futures):
+                futures = [executor.submit(process_file, path) for path in candidate_paths]
+                for i, future in enumerate(as_completed(futures), 1):
                     try:
                         file_path, content = future.result()
-                        if content:
-                            content_results.append((file_ids[file_path], content))
-                    except Exception as e:
-                        pass
-            
-            logger.info(f"  已读取 {min(i+batch_size, len(files))}/{len(files)} 个文件内容")
-        
-        # 批量插入内容
-        try:
-            # 开启事务
-            self.conn.execute('BEGIN TRANSACTION')
-            
-            # 分批处理，每批10000条
-            batch_size = 10000
-            total = len(content_results)
-            indexed_count = 0
-            
-            # 准备SQL语句
-            insert_content_sql = "INSERT OR REPLACE INTO file_content (file_id, content) VALUES (?, ?)"
-            
-            # 准备数据
-            content_data = []
-            indexed_file_ids = []
-            
-            for file_id, content in content_results:
-                content_data.append((file_id, content))
-                indexed_file_ids.append(file_id)
-                
-                # 当数据达到批量大小时，执行插入
-                if len(content_data) >= batch_size:
-                    # 批量插入内容
-                    self.cursor.executemany(insert_content_sql, content_data)
-                    indexed_count += len(content_data)
-                    logger.info(f"  已索引 {min(indexed_count, total)}/{total} 个文件")
-                    content_data = []
-            
-            # 插入剩余数据
-            if content_data:
-                self.cursor.executemany(insert_content_sql, content_data)
-                indexed_count += len(content_data)
-                logger.info(f"  已索引 {min(indexed_count, total)}/{total} 个文件")
-            
-            # 批量更新文件状态（使用IN子句）
+                        if not content:
+                            continue
+                        file_id = file_ids[file_path]
+                        pending_rows.append((file_id, content))
+                        indexed_file_ids.append(file_id)
+                        if len(pending_rows) >= flush_size:
+                            self.cursor.executemany(insert_content_sql, pending_rows)
+                            indexed_count += len(pending_rows)
+                            pending_rows = []
+                    except Exception:
+                        continue
+
+                    if i % 1000 == 0 or i == total:
+                        logger.info(f"  已处理 {i}/{total} 个文件内容")
+
+            if pending_rows:
+                self.cursor.executemany(insert_content_sql, pending_rows)
+                indexed_count += len(pending_rows)
+
             if indexed_file_ids:
-                # 分批更新，每批10000个
                 update_batch_size = 10000
                 for i in range(0, len(indexed_file_ids), update_batch_size):
                     batch_ids = indexed_file_ids[i:i+update_batch_size]
                     placeholders = ','.join(['?'] * len(batch_ids))
                     update_sql = f"UPDATE files SET is_content_indexed = 1 WHERE id IN ({placeholders})"
                     self.cursor.execute(update_sql, batch_ids)
-            
-            # 一次性提交事务
+
             self.conn.commit()
-            logger.info("全文索引构建完成")
+            logger.info(f"全文索引构建完成，共索引 {indexed_count} 个文件")
         except Exception as e:
             logger.error(f"Error inserting content: {e}")
-            # 发生错误时回滚事务
             self.conn.rollback()
     
     def _should_index_content(self, file):
