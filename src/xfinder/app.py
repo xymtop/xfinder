@@ -75,6 +75,7 @@ class XFinderApp:
         self.page.window_min_width = 900
         self.page.window_min_height = 600
         self.page.theme_mode = ft.ThemeMode.LIGHT
+        self.page.bgcolor = "#f3f6fb"
         self.page.padding = 0
         self.page.spacing = 0
         self.page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
@@ -125,14 +126,16 @@ class XFinderApp:
     def init_ui(self):
         # 搜索输入框
         self.search_field = ft.TextField(
-            hint_text="输入搜索关键词，实时显示结果...",
+            hint_text="输入关键词，实时搜索文件...",
             on_change=self.on_search,
             autofocus=True,
             border=ft.InputBorder.OUTLINE,
-            border_radius=0,
+            border_radius=10,
             text_size=13,
-            height=35,
+            height=40,
             content_padding=ft.Padding(left=10, top=8, right=10, bottom=8),
+            expand=True,
+            prefix_icon=ft.Icons.SEARCH,
         )
 
         # 目录选择框
@@ -141,17 +144,24 @@ class XFinderApp:
         self.directory_input = ft.TextField(
             value=desktop_path,
             hint_text="选择扫描目录",
-            height=35,
-            text_size=13,
+            height=38,
+            text_size=12,
+            border=ft.InputBorder.OUTLINE,
+            border_radius=10,
+            width=240,
+            prefix_icon=ft.Icons.FOLDER_OPEN,
         )
         
         # 重新构建按钮
         self.rebuild_button = ft.ElevatedButton(
             "重新构建",
             on_click=self.rebuild_index,
-            height=35,
+            height=38,
             style=ft.ButtonStyle(
-                text_style=ft.TextStyle(size=13)
+                shape=ft.RoundedRectangleBorder(radius=10),
+                text_style=ft.TextStyle(size=12, weight=ft.FontWeight.W_500),
+                color="#ffffff",
+                bgcolor="#2563eb",
             )
         )
         
@@ -159,9 +169,12 @@ class XFinderApp:
         self.permission_button = ft.ElevatedButton(
             "权限设置",
             on_click=self.open_permission_settings,
-            height=35,
+            height=38,
             style=ft.ButtonStyle(
-                text_style=ft.TextStyle(size=13)
+                shape=ft.RoundedRectangleBorder(radius=10),
+                text_style=ft.TextStyle(size=12, weight=ft.FontWeight.W_500),
+                color="#334155",
+                bgcolor="#e2e8f0",
             )
         )
 
@@ -187,9 +200,12 @@ class XFinderApp:
                 ft.dropdown.Option(".mp3"),
                 ft.dropdown.Option(".zip"),
             ],
-            text_size=13,
+            text_size=12,
             value="全部",  # 设置默认值为全部
             on_select=self.on_filter_change,
+            width=110,
+            border_radius=10,
+            dense=True,
         )
         
         # 文件/文件夹筛选
@@ -199,88 +215,108 @@ class XFinderApp:
                 ft.dropdown.Option("文件"),
                 ft.dropdown.Option("文件夹"),
             ],
-            text_size=13,
+            text_size=12,
             value="全部",  # 设置默认值为全部
             on_select=self.on_filter_change,
+            width=110,
+            border_radius=10,
+            dense=True,
         )
 
         # 搜索按钮
         self.search_button = ft.ElevatedButton(
             "搜索",
             on_click=self.on_search,
-            height=35,
+            height=38,
             style=ft.ButtonStyle(
-                text_style=ft.TextStyle(size=13)
+                shape=ft.RoundedRectangleBorder(radius=10),
+                text_style=ft.TextStyle(size=12, weight=ft.FontWeight.W_500),
+                color="#ffffff",
+                bgcolor="#0f766e",
             )
         )
 
-        # 搜索工具栏
+        # 顶部工具区
         search_toolbar = ft.Container(
-            content=ft.Row([
-                # 搜索框
-                ft.Icon(ft.Icons.SEARCH, size=18, color="#666666"),
-                self.search_field,
-                
-                # 文件类型筛选
-                ft.Container(
-                    content=ft.Text("文件类型:", size=13, color="#666666"),
-                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
-                ),
-                self.type_filter,
-                
-                # 文件/文件夹筛选
-                ft.Container(
-                    content=ft.Text("类型:", size=13, color="#666666"),
-                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
-                ),
-                self.item_type_filter,
-                
-                # 搜索按钮
-                self.search_button,
-                
-                # 扫描目录
-                ft.Container(
-                    content=ft.Text("扫描目录:", size=13, color="#666666"),
-                    padding=ft.Padding(left=20, top=0, right=5, bottom=0),
-                ),
-                self.directory_input,
-                self.rebuild_button,
-                self.permission_button,
-            ], spacing=10, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=False),
-            padding=ft.Padding(left=10, top=5, right=10, bottom=5),
-            bgcolor="#ffffff",
-            border=ft.border.all(1, "#d0d0d0"),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text("XFinder", size=18, weight=ft.FontWeight.W_700, color="#0f172a"),
+                            ft.Text("Local Search", size=11, color="#64748b"),
+                            ft.Container(width=4),
+                            self.search_field,
+                            self.type_filter,
+                            self.item_type_filter,
+                            self.search_button,
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Text("扫描目录", size=12, color="#5f6368"),
+                            self.directory_input,
+                            self.rebuild_button,
+                            self.permission_button,
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=ft.Padding(left=12, top=10, right=12, bottom=10),
+            bgcolor="#f8fafc",
+            border=ft.border.only(bottom=ft.BorderSide(1, "#d9dee4")),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=14,
+                color="#14000000",
+                offset=ft.Offset(0, 2),
+            ),
         )
 
-        # 列标题行（类似Everything的列头）
+        result_header = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text("搜索结果", size=12, weight=ft.FontWeight.W_600, color="#334155"),
+                    ft.Container(expand=True),
+                    ft.Text("双击可打开文件或文件夹", size=11, color="#94a3b8"),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding(left=16, top=8, right=16, bottom=8),
+            margin=ft.Margin(left=12, top=10, right=12, bottom=0),
+            bgcolor="#ffffff",
+            border=ft.border.all(1, "#d9dee4"),
+            border_radius=10,
+        )
+
+        # 保留自定义列头结构，避免排序事件引用中断
         self.header_row = ft.Container(
-            content=ft.Row([
-                self._create_header_cell("名称", "name", 300),
-                self._create_header_cell("路径", "path", 350),
-                self._create_header_cell("大小", "size", 100),
-                self._create_header_cell("类型", "type", 80),
-                self._create_header_cell("修改时间", "mtime", 180),
-            ], spacing=0, alignment=ft.MainAxisAlignment.START),
-            bgcolor="#f0f0f0",
-            border=ft.border.all(1, "#d0d0d0"),
+            content=ft.Row([], spacing=0, alignment=ft.MainAxisAlignment.START),
+            bgcolor="#ffffff",
             padding=ft.Padding(left=0, top=0, right=0, bottom=0),
-            height=28,
+            height=0,
         )
 
         # 结果DataTable
         self.result_table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text("名称", size=12, weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("路径", size=12, weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("大小", size=12, weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("类型", size=12, weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("检索类型", size=12, weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("修改时间", size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("Name", size=12, weight=ft.FontWeight.W_500)),
+                ft.DataColumn(ft.Text("Path", size=12, weight=ft.FontWeight.W_500)),
+                ft.DataColumn(ft.Text("Size", size=12, weight=ft.FontWeight.W_500)),
+                ft.DataColumn(ft.Text("Date Modified", size=12, weight=ft.FontWeight.W_500)),
             ],
             rows=[],
-            column_spacing=0,
-            horizontal_margin=0,
-            divider_thickness=0.5,
+            heading_row_height=32,
+            data_row_min_height=28,
+            data_row_max_height=28,
+            column_spacing=16,
+            horizontal_margin=8,
+            divider_thickness=0.6,
+            heading_row_color="#eef2ff",
         )
 
         # 结果容器
@@ -293,18 +329,22 @@ class XFinderApp:
             ),
             expand=True,
             bgcolor="#ffffff",
-            border=ft.border.all(1, "#d0d0d0"),
+            border=ft.border.all(1, "#d9dee4"),
+            border_radius=10,
+            margin=ft.Margin(left=12, top=6, right=12, bottom=0),
         )
 
         # 状态栏
         self.status_bar = ft.Container(
             content=ft.Row([
-                ft.Text(self.status_text, size=11, color="#666666"),
-            ], alignment=ft.MainAxisAlignment.START),
-            padding=ft.Padding(left=10, top=4, right=10, bottom=4),
-            bgcolor="#f0f0f0",
-            border=ft.border.only(top=ft.BorderSide(width=1, color="#d0d0d0")),
-            height=28,
+                ft.Text(self.status_text, size=11, color="#333333"),
+                ft.Container(expand=True),
+                ft.Text("XFinder Desktop Search", size=11, color="#7a7f87"),
+            ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding(left=12, top=6, right=12, bottom=6),
+            bgcolor="#f8fafc",
+            border=ft.border.only(top=ft.BorderSide(width=1, color="#d9dee4")),
+            height=30,
         )
 
         # 索引构建进度条
@@ -319,8 +359,11 @@ class XFinderApp:
                 ft.Text("构建索引中...", size=11, color="#666666"),
                 self.progress_bar,
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-            padding=ft.Padding(left=10, top=4, right=10, bottom=4),
-            bgcolor="#fff9e6",
+            padding=ft.Padding(left=12, top=6, right=12, bottom=6),
+            margin=ft.Margin(left=12, top=8, right=12, bottom=0),
+            bgcolor="#fff8e1",
+            border=ft.border.all(1, "#f3df9b"),
+            border_radius=8,
             visible=False,
             height=28,
         )
@@ -330,10 +373,11 @@ class XFinderApp:
             ft.Column([
                 search_toolbar,
                 self.header_row,
+                result_header,
                 self.result_container,
                 self.progress_container,
                 self.status_bar,
-            ], expand=True, spacing=10),
+            ], expand=True, spacing=0),
         )
 
         # 启动时不自动构建索引，只有当用户点击重新构建时才构建
@@ -749,47 +793,43 @@ class XFinderApp:
                     mtime = item.get("mtime", 0)
                     is_directory = item.get("is_directory", False)
                     extension = item.get("extension", "")
-                    match_type = item.get("match_type", "未知")
+                    ext = extension.lower().lstrip(".")
 
                     size_str = self._format_size(size) if not is_directory else ""
                     mtime_str = self._format_time(mtime)
-                    type_str = self._get_file_type(extension, is_directory)
 
                     # 根据文件类型选择图标
                     try:
                         if is_directory:
-                            icon = ft.Icon(ft.Icons.FOLDER, size=16, color="#4285f4")
-                        elif extension in ["py"]:
+                            icon = ft.Icon(ft.Icons.FOLDER, size=16, color="#3b82f6")
+                        elif ext in ["py", "js", "ts", "tsx", "jsx", "java", "go", "rs", "cpp", "c", "h", "php"]:
                             icon = ft.Icon(ft.Icons.CODE, size=16, color="#3776ab")
-                        elif extension in ["js", "ts"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#f7df1e")
-                        elif extension in ["html"]:
+                        elif ext in ["html", "xml"]:
                             icon = ft.Icon(ft.Icons.CODE, size=16, color="#e34f26")
-                        elif extension in ["css"]:
+                        elif ext in ["css", "scss", "less"]:
                             icon = ft.Icon(ft.Icons.CODE, size=16, color="#1572b6")
-                        elif extension in ["json"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
-                        elif extension in ["yaml", "yml"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
-                        elif extension in ["toml"]:
-                            icon = ft.Icon(ft.Icons.CODE, size=16, color="#000000")
-                        elif extension in ["md"]:
-                            icon = ft.Icon(ft.Icons.DESCRIPTION, size=16, color="#000000")
-                        elif extension in ["txt"]:
-                            icon = ft.Icon(ft.Icons.TEXT_SNIPPET, size=16, color="#000000")
-                        elif extension in ["pdf"]:
+                        elif ext in ["json", "yaml", "yml", "toml", "ini", "env"]:
+                            icon = ft.Icon(ft.Icons.DATA_OBJECT, size=16, color="#475569")
+                        elif ext in ["md", "txt", "rtf"]:
+                            icon = ft.Icon(ft.Icons.DESCRIPTION, size=16, color="#64748b")
+                        elif ext in ["pdf"]:
                             icon = ft.Icon(ft.Icons.PICTURE_AS_PDF, size=16, color="#ea4335")
-                        elif extension in ["jpg", "jpeg", "png", "gif", "bmp"]:
+                        elif ext in ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"]:
                             icon = ft.Icon(ft.Icons.IMAGE, size=16, color="#fbbc05")
-                        elif extension in ["mp3", "wav", "flac", "aac"]:
+                        elif ext in ["mp3", "wav", "flac", "aac", "m4a", "ogg"]:
                             icon = ft.Icon(ft.Icons.MUSIC_NOTE, size=16, color="#9c27b0")
-                        elif extension in ["mp4", "avi", "mov", "mkv"]:
+                        elif ext in ["mp4", "avi", "mov", "mkv", "webm"]:
                             icon = ft.Icon(ft.Icons.MOVIE, size=16, color="#00bcd4")
-                        elif extension in ["zip", "rar", "tar", "gz", "7z"]:
+                        elif ext in ["zip", "rar", "tar", "gz", "7z", "xz"]:
                             icon = ft.Icon(ft.Icons.ARCHIVE, size=16, color="#ff9800")
+                        elif ext in ["doc", "docx", "pages"]:
+                            icon = ft.Icon(ft.Icons.ARTICLE, size=16, color="#2563eb")
+                        elif ext in ["xls", "xlsx", "csv", "numbers"]:
+                            icon = ft.Icon(ft.Icons.TABLE_CHART, size=16, color="#16a34a")
+                        elif ext in ["ppt", "pptx", "key"]:
+                            icon = ft.Icon(ft.Icons.SLIDESHOW, size=16, color="#f97316")
                         else:
-                            # 使用FILE_COPY作为默认图标，避免使用可能不存在的FILE图标
-                            icon = ft.Icon(ft.Icons.FILE_COPY, size=16, color="#666666")
+                            icon = ft.Icon(ft.Icons.INSERT_DRIVE_FILE, size=16, color="#64748b")
 
                         # 创建数据行
                         row = ft.DataRow(
@@ -805,8 +845,6 @@ class XFinderApp:
                                 ),
                                 ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
                                 ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(match_type, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
                             ],
                             on_select_change=lambda e, p=path: self.open_item(p),
@@ -819,8 +857,6 @@ class XFinderApp:
                                 ft.DataCell(ft.Text(name, size=12, color="#333333", overflow=ft.TextOverflow.ELLIPSIS)),
                                 ft.DataCell(ft.Text(path, size=11, color="#666666", overflow=ft.TextOverflow.ELLIPSIS)),
                                 ft.DataCell(ft.Text(size_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(type_str, size=11, color="#666666")),
-                                ft.DataCell(ft.Text(match_type, size=11, color="#666666")),
                                 ft.DataCell(ft.Text(mtime_str, size=11, color="#666666")),
                             ],
                             on_select_change=lambda e, p=path: self.open_item(p),
